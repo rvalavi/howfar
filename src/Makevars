@@ -1,0 +1,31 @@
+TARGET_DIR = ./rust/target
+LIBDIR = $(TARGET_DIR)/release
+STATLIB = $(LIBDIR)/libhowfar.a
+PKG_LIBS = -L$(LIBDIR) -lhowfar
+
+all: C_clean
+
+$(SHLIB): $(STATLIB)
+
+CARGOTMP = $(CURDIR)/.cargo
+
+$(STATLIB):
+	if [ -f "$(CARGOTMP)/config.toml" ]; then \
+	  cp "$(CARGOTMP)/config.toml" "$(CARGOTMP)/config.toml.bak"; \
+	fi
+	export PATH="$(PATH):$(HOME)/.cargo/bin" && \
+	  CARGO_HOME=$(CARGOTMP) cargo build --lib --release \
+	    --manifest-path=./rust/Cargo.toml \
+	    --target-dir $(TARGET_DIR)
+	if [ -f "$(CARGOTMP)/config.toml.bak" ]; then \
+	  mv "$(CARGOTMP)/config.toml.bak" "$(CARGOTMP)/config.toml"; \
+	else \
+	  rm -Rf "$(CARGOTMP)"; \
+	fi
+	rm -Rf $(TARGET_DIR)/release/build
+
+C_clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS)
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) $(TARGET_DIR)

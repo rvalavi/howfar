@@ -1,0 +1,14 @@
+library(terra)
+library(howfar)
+library(sf)
+
+lns <- st_read("/Users/val085/Documents/Biodiversity/data/china/2015/2015.gpkg")
+
+r <- terra::rast("/Users/val085/Documents/Biodiversity/data/china/site_condition_2015.tif")
+
+
+tm <- Sys.time()
+dist <- howfar::distance_to(lns[sample(nrow(lns), 10), ], r)
+Sys.time() - tm
+
+plot(dist)

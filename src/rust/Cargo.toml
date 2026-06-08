@@ -1,0 +1,18 @@
+[package]
+name = "howfar"
+version = "0.0.1"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+name = "howfar"
+
+[dependencies]
+extendr-api = "0.7"
+rayon = "1.10"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1

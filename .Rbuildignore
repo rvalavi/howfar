@@ -1,0 +1,8 @@
+^src/rust/target$
+^src/\.cargo$
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.claude$
+^\.github$
+^README\.md$
+^README\.Rmd$
