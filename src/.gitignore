@@ -1,0 +1,13 @@
+# Compiled object files and shared libraries (rebuilt on install)
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+
+# Rust / Cargo build output
+/rust/target/
+/rust/vendor/
+
+# Vendored Cargo config created during R CMD build / check
+.cargo/

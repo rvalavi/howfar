@@ -46,7 +46,7 @@ Then in R:
 
 ```r
 # install.packages("devtools")
-devtools::install_github("youruser/howfar")
+devtools::install_github("rvalavi/howfar")
 ```
 
 For local development:
