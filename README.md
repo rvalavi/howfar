@@ -1,8 +1,11 @@
 # howfar
 
+[![R-CMD-check](https://github.com/rvalavi/howfar/actions/workflows/R-CMD-check.yaml/badge.svg)](https://github.com/rvalavi/howfar/actions/workflows/R-CMD-check.yaml)
+[![Lifecycle: experimental](https://img.shields.io/badge/lifecycle-experimental-orange.svg)](https://lifecycle.r-lib.org/articles/stages.html#experimental)
+
 Fast Euclidean distance rasters from spatial features (points, lines, polygons), with a parallel Rust backend.
 
-Given a `SpatVector` and a `SpatRaster` template, `distance_to()` returns a raster where each cell holds the Euclidean distance to the nearest feature. The same function works for all three geometry types.
+Given a `SpatVector` and a `SpatRaster` template, `distance_to()` returns a raster where each cell holds the distance to the nearest feature. The same function works for all three geometry types. Distances are returned in **metres by default** (for any CRS); pass `unit = "mapunit"` for raw CRS-unit distances.
 
 ```r
 library(howfar)
@@ -33,6 +36,20 @@ By contrast, `terra::distance()` computes the true geometric distance to the vec
 - Use `terra::distance()` when you need exact geometric distance — for example, when comparing distances on the order of a fraction of a cell.
 
 If you're unsure whether the accuracy is good enough for your use case, compare against `terra::distance()` on a small subset of your data first.
+
+## Distance units
+
+`distance_to()` returns distances in **metres by default** (`unit = "meter"`), for any coordinate reference system (CRS):
+
+- **Projected CRS** — the planar Euclidean distance between cell centers, converted from the CRS linear unit to metres (e.g. feet → metres). Exact.
+- **Geographic CRS** (longitude/latitude) — the **Haversine** great-circle distance in metres.
+
+Pass `unit = "mapunit"` to instead get the raw distance transform in the template's own CRS units (cell distance × resolution) — faster, and a true metric distance only when the CRS is projected with square cells.
+
+In both modes the nearest source cell is always found by the Euclidean distance transform on the raster grid (in cell/index space, "as is"); for `unit = "meter"` the distance to that nearest cell is then re-measured with the appropriate metric.
+
+> [!NOTE]
+> **Lon/lat distances are approximate.** For geographic CRSs the result is an approximation, for two reasons: (1) the nearest source is chosen in grid space (degrees), which can differ from the geodesically nearest source over very large extents or near the poles; and (2) Haversine assumes a spherical Earth. Over regional extents at moderate latitudes this is effectively exact; over continental/global extents or high latitudes it can drift from the true geodesic distance — reproject to a suitable projected CRS first for best accuracy.
 
 ## Installation
 
@@ -89,7 +106,7 @@ d <- distance_to(line, template, n_cores = 4)
 ## API
 
 ```r
-distance_to(x, template, touches = TRUE, n_cores = NULL)
+distance_to(x, template, touches = TRUE, n_cores = NULL, unit = c("meter", "mapunit"))
 ```
 
 | argument   | type                     | meaning                                                                 |
@@ -98,8 +115,9 @@ distance_to(x, template, touches = TRUE, n_cores = NULL)
 | `template` | `SpatRaster`             | defines output extent, resolution, and CRS                              |
 | `touches`  | logical                  | passed to `terra::rasterize()`; `TRUE` marks every cell touched         |
 | `n_cores`  | integer or `NULL`        | number of threads; `NULL` = all logical cores; `1` = serial             |
+| `unit`     | `"meter"` / `"mapunit"`  | output units; `"meter"` (default) = metres, `"mapunit"` = CRS units     |
 
-Returns a single-layer `SpatRaster` with distances in CRS units.
+Returns a single-layer `SpatRaster` with distances in metres (`unit = "meter"`) or CRS units (`unit = "mapunit"`). See [Distance units](#distance-units).
 
 ## Geometry-specific behavior
 
@@ -119,13 +137,14 @@ For mixed geometry types, call `distance_to()` separately on each `SpatVector` a
    - Transpose.
    - 1D EDT along each row of the transposed matrix (i.e., each column of the original).
    - Transpose back.
-4. Take the square root and multiply by cell size to convert from squared cell units to CRS-unit distances.
+4. Take the square root to get distances in cell units, then convert to the requested `unit`: for `"mapunit"`, multiply by cell size (CRS units); for `"meter"`, also track each cell's nearest source cell (the *feature transform*) and measure the metric distance between cell centers — planar Euclidean (scaled to metres) for projected CRSs, or Haversine for lon/lat.
 
 The 1D EDT is `O(n)` per row/column and the work is embarrassingly parallel across rows and across columns.
 
 ## Limitations
 
-- Assumes square cells (warns if not).
+- `unit = "mapunit"` assumes square cells (warns if not); `unit = "meter"` handles non-square cells correctly.
+- Lon/lat distances (`unit = "meter"`) are approximate — see [Distance units](#distance-units).
 - One geometry type per call.
 - In-memory only — the raster must fit in RAM.
 - Accuracy is bounded by the cell size (see caveat above).
