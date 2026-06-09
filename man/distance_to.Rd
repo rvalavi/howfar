@@ -2,9 +2,16 @@
 % Please edit documentation in R/distance.R
 \name{distance_to}
 \alias{distance_to}
-\title{Euclidean distance raster from spatial features}
+\title{Distance raster from spatial features}
 \usage{
-distance_to(x, template, touches = TRUE, n_cores = NULL)
+distance_to(
+  x,
+  template,
+  touches = TRUE,
+  n_cores = NULL,
+  method = c("auto", "planar", "haversine"),
+  unit = c("m", "km")
+)
 }
 \arguments{
 \item{x}{A \code{SpatVector} of points, lines, \emph{or} polygons (one geometry type
@@ -25,20 +32,62 @@ points.}
 distance transform. \code{NULL} (default) uses all logical cores available
 (rayon's default). A positive integer caps parallelism at that value;
 \code{1} runs serially.}
+
+\item{method}{Character, one of \code{"auto"} (default), \code{"planar"}, or
+\code{"haversine"}. How the distance between a cell and its nearest source cell
+is measured. \code{"auto"} uses \code{"haversine"} for geographic (longitude/
+latitude) CRSs and \code{"planar"} otherwise. See Details.}
+
+\item{unit}{Character, one of \code{"m"} (metres, default) or \code{"km"}. Output unit
+for \emph{metric} results. Ignored when the result is in map units — i.e. a
+\code{"planar"} distance on a geographic or CRS-less template (see Details).}
 }
 \value{
-A single-layer \code{SpatRaster} with the distance to the nearest feature
-in each cell.
+A single-layer \code{SpatRaster} of distances to the nearest feature, in
+metres/kilometres for metric results, or in the template's map units for a
+planar distance on a geographic/CRS-less template.
 }
 \description{
-Returns a raster where each cell value is the shortest Euclidean distance
-(in CRS units) to the nearest feature in \code{x}. Points, lines, and polygons
-are all supported. Features are rasterized onto \code{template}, then a parallel
-exact Euclidean distance transform is computed in Rust.
+Returns a raster where each cell value is the shortest distance to the
+nearest feature in \code{x}. Points, lines, and polygons are all supported.
+Features are rasterized onto \code{template}, then a parallel exact Euclidean
+distance transform is computed in Rust to locate, for every cell, its
+nearest source cell. The distance to that cell is then measured with the
+chosen \code{method}.
 }
 \details{
-Distance assumes square cells. If the template has non-square cells, a
-warning is issued and the x-resolution is used as the scale factor.
+\strong{Methods.}
+\itemize{
+\item \strong{\code{"planar"}} — Euclidean distance between cell centers in the template's
+own coordinates. For a projected CRS this is a true metric distance,
+returned in metres (converted from the CRS linear unit via
+\code{\link[terra:linearUnits]{terra::linearUnits()}}, so feet etc. become metres); \code{unit} selects m/km.
+For a geographic CRS the coordinates are degrees, so the result is in
+\strong{map units (degrees)} and \code{unit} is ignored. Non-square cells are handled
+correctly (the actual center-to-center distance is measured).
+\item \strong{\code{"haversine"}} — great-circle distance in metres on a sphere of radius
+6,371,000 m. The nearest source is found by a true spherical
+nearest-neighbour search (correct at any latitude and across the
+antimeridian), and the Haversine distance to it is returned. Requires a
+geographic CRS; on a projected CRS it errors (reproject to lon/lat first).
+\code{unit} selects m/km.
+\item \strong{\code{"auto"}} (default) — \code{"haversine"} for geographic CRSs, \code{"planar"}
+otherwise. Distances therefore default to metres for both projected and
+geographic inputs, and to map units only when the CRS is missing.
+}
+
+\strong{Nearest source.} For \code{"planar"} the nearest source cell is found by the
+exact Euclidean distance transform on the raster grid. For \code{"haversine"} it
+is found by a great-circle nearest-neighbour search, so the reported distance
+is to the genuinely closest source on the sphere (not merely the grid-nearest
+one).
+
+\strong{Accuracy (\code{"haversine"}).} Because the nearest source is found correctly
+by great-circle distance, the only approximations are (1) features are
+rasterized to cell centers (accurate to ~1 cell, as everywhere in \code{howfar}),
+and (2) Haversine assumes a spherical Earth (vs. an ellipsoidal geodesic,
+typically <0.5\%). For sub-cell or ellipsoidal precision, use
+\code{\link[terra:distance]{terra::distance()}}.
 
 \strong{Geometry-specific semantics:}
 \itemize{
@@ -61,25 +110,22 @@ If no feature intersects any cell, every cell in the result will be \code{Inf}.
 \examples{
 \dontrun{
 library(terra)
-template <- rast(extent = ext(-5.5, 5.5, -5.5, 5.5), resolution = 1)
 
-# Distance to a line
-line <- vect("LINESTRING(0 -5, 0 5)")
-d_line <- distance_to(line, template)
+# Projected template (metres) -> planar distance in metres
+template <- rast(extent = ext(0, 1000, 0, 1000), resolution = 10,
+                 crs = "EPSG:3857")
+line <- vect("LINESTRING(500 0, 500 1000)", crs = "EPSG:3857")
+d <- distance_to(line, template)              # metres (auto -> planar)
+d_km <- distance_to(line, template, unit = "km")
 
-# Distance to a point
-point <- vect("POINT(0 0)")
-d_point <- distance_to(point, template)
+# Geographic template -> great-circle distance in metres
+tmpl_ll <- rast(extent = ext(-2.5, 2.5, -2.5, 2.5), resolution = 0.1,
+                crs = "EPSG:4326")
+pt <- vect("POINT(0 0)", crs = "EPSG:4326")
+d_ll <- distance_to(pt, tmpl_ll)              # metres (auto -> haversine)
 
-# Distance to a polygon (cells inside the polygon = 0)
-poly <- vect("POLYGON((-1 -1, 1 -1, 1 1, -1 1, -1 -1))")
-d_poly <- distance_to(poly, template)
-
-# Distance to polygon boundary only (positive both inside and outside)
-d_bound <- distance_to(as.lines(poly), template)
-
-# Distance to combined point + line features
-d_combined <- min(d_line, d_point)
+# Force planar on a lon/lat template -> distance in degrees (map units)
+d_deg <- distance_to(pt, tmpl_ll, method = "planar")
 
 # Limit to 4 threads
 d <- distance_to(line, template, n_cores = 4)
